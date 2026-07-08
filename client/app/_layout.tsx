@@ -1,12 +1,10 @@
 import { Redirect, Stack } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
-import * as SplashScreen from 'expo-splash-screen';
 
-SplashScreen.preventAutoHideAsync();
 
 function AuthGuard() {
-  const { isSignedIn } = {isSignedIn: true}
+  const { isSignedIn } = {isSignedIn: false}
   if (!isSignedIn) {
     return <Redirect href="/(auth)" />
   } else if (isSignedIn) {
