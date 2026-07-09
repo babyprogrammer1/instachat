@@ -57,7 +57,7 @@ export default function search() {
       ) : (
         <FlatList data={users} keyExtractor={(item) => item._id} contentContainerStyle={styles.list} renderItem={({ item: u }) => (
           <TouchableOpacity style={styles.userRow} onPress={() => startChat(u)} activeOpacity={0.7}>
-            <Avatar name={u.name} src={u.avatar} size={44} online={u.isOnline} />
+            <Avatar name={u.name} src={u.avatar} size={45} online={u.isOnline} />
             <View style={styles.userInfo}>
               <View style={styles.nameRow}>
                 <Text style={styles.userName}>{u.name}</Text>
