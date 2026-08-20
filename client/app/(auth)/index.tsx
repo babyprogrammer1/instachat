@@ -1,4 +1,4 @@
-import { View, Text, KeyboardAvoidingView, Platform, ScrollView, TextInput, TouchableOpacity, ActivityIndicator } from 'react-native'
+import { View, Text, KeyboardAvoidingView, Platform, ScrollView, TextInput, TouchableOpacity, ActivityIndicator, Alert } from 'react-native'
 import React, { useState } from 'react'
 import { useRouter } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
@@ -7,10 +7,15 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Colors } from '@/constants/Colors';
 import { SvgXml } from 'react-native-svg';
 import { Ionicons } from '@expo/vector-icons';
+import { useClerk, useSignIn, useSignUp } from '@clerk/expo';
 
 type Mode = 'login' | 'register';
 
 export default function AuthScreen() {
+  const {signIn} = useSignIn();
+  const {signUp} = useSignUp();
+  const {setActive} = useClerk()
+
   const [mode, setMode] = useState<Mode>('register')
   const [name, setName] = useState('')
   const [handle, setHandle] = useState('')
@@ -19,22 +24,116 @@ export default function AuthScreen() {
   const [verificationCode, setVerificationCode] = useState('')
   const [loading, setLoading] = useState(false)
   const [verifying, setVerifying] = useState(false)
-
+  const [verifyingMode, setVerifyingMode] = useState<'login' | 'login_mfa' | 'register'>('register')
   const router = useRouter();
-  const handleSubmit = () => {
+  
+  const handleSubmit = async () => {
+    if (!email.trim() || !password.trim()) {
+      return Alert.alert("Validation Error", "Please fill in all fields.");
+    }
+    if (mode === 'register' && (!name.trim() || !handle.trim())) {
+      return Alert.alert("Validation Error", "Please fill in all fields.");
+    }
     setLoading(true)
-    setTimeout(() => {
+    try {
+      if(mode === "login"){
+        if (!signIn) return;
+        const result = await signIn.create({
+          identifier: email,
+          password
+        });
+        if (result.error) {
+          throw result.error;
+        }
+
+        if(signIn.status === 'complete'){
+          await setActive({ session: signIn.createdSessionId });
+          router.replace("/(tabs)");
+        }else if(signIn.status === 'needs_first_factor' && signIn.emailCode){
+          await signIn.emailCode.sendCode()
+          setVerifyingMode('login')
+          setVerifying(true)
+        } else if(signIn.status === 'needs_second_factor' && signIn.mfa){
+          await signIn.mfa.sendEmailCode()
+          setVerifyingMode('login_mfa')
+          setVerifying(true)
+        }
+      } else {
+        if(!signUp) return;
+
+        const spaceIdx = name.trim().indexOf(" ");
+        const firstName = spaceIdx === -1 ? name.trim() : name.trim().substring(0, spaceIdx);
+        const lastName = spaceIdx === -1 ? "" : name.trim().substring(spaceIdx + 1);
+
+        const result = await signUp.create({
+          emailAddress: email,
+          password,
+          firstName,
+          lastName,
+          username: handle.toLowerCase().replace(/\s/g, '')
+        });
+        if (result.error) {
+          throw result.error;
+        }
+
+        const sendResult = await signUp.verifications.sendEmailCode();
+        if (sendResult.error) {
+          throw sendResult.error;
+        }
+        setVerifyingMode('register')
+        setVerifying(true)
+      }
+    } catch (err: any){
+      Alert.alert("Authentication Error", err?.errors?.[0]?.message || err?.message || "Something went wrong.");
+    } finally {
       setLoading(false)
-      setVerifying(true)
-    }, 1500)
+    }
   }
 
   const handleVerify = async () => {
-    setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
-      router.replace('/(tabs)');
-    }, 1500);
+    if (!verificationCode.trim()) {
+      return Alert.alert("Validation Error", "Please enter the verification code.");
+    }
+    setLoading(true)
+    try {
+      if(verifyingMode === 'register'){
+        if (!signUp) return;
+        const result = await signUp.verifications.verifyEmailCode({
+          code: verificationCode
+        });
+        if (result.error) {
+          throw result.error;
+        }
+        if(signUp.status === 'complete'){
+          await setActive({ session: signUp.createdSessionId });
+          router.replace("/(tabs)");
+        } else {
+          Alert.alert("Verification Failed", "Please check code and try again.");
+        }
+      } else{
+        if (!signIn) return;
+        if(verifyingMode === 'login_mfa'){
+          await signIn.mfa.verifyEmailCode({
+            code: verificationCode
+          })
+        }else{
+          await signIn.emailCode.verifyCode({
+            code: verificationCode
+          })
+        }
+
+        if(signIn.status === 'complete'){
+          await setActive({ session: signIn.createdSessionId });
+          router.replace("/(tabs)");
+        } else {
+          Alert.alert("Verification Failed", "Please check code and try again.");
+        }
+      }
+    } catch (err: any){
+      Alert.alert("Verification Error", err?.errors?.[0]?.message || err?.message || "Something went wrong.");
+    } finally {
+      setLoading(false)
+    }
   }
 
 
