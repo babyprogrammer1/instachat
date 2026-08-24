@@ -1,5 +1,5 @@
-import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Alert, Modal, Pressable } from 'react-native'
-import React, { useState } from 'react'
+import { View, Text, ScrollView, TouchableOpacity, ActivityIndicator, Alert} from 'react-native'
+import React, { useEffect, useState } from 'react'
 import { dummyUserProfile } from '@/assets/assets'
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { styles } from '@/assets/styles/ProfileScreen.styles';
@@ -9,9 +9,10 @@ import Avatar from '@/components/Avatar';
 import { TextInput } from 'react-native-gesture-handler';
 import { LinearGradient } from 'expo-linear-gradient';
 import * as ImagePicker from 'expo-image-picker'
+import { api, useApp } from '@/context/AppContext';
 
 export default function profile() {
-  const {auth} = {auth: {user: dummyUserProfile}}
+  const {auth, logout, updateUser} = useApp()
 
   const user = auth.user;
   const [editMode, setEditMode] = useState(false);
@@ -20,8 +21,9 @@ export default function profile() {
   const [profileBio, setProfileBio] = useState(auth.user?.bio || "");
   const [avatarUri, setAvatarUri] = useState<(string | null)>(  null);
   const [loading, setLoading] = useState(false);
+  const [savedAvatar, setSavedAvatar] = useState<string | null>(user?.avatar || null);
 
-  const displayAvatar = avatarUri || user?.avatar;
+  const displayAvatar = avatarUri || savedAvatar || user?.avatar;
 
   const pickAvatar = async () => {
     const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -42,12 +44,58 @@ export default function profile() {
   }
 
   const saveProfile = async () => {
+    const trimmedName = profileName.trim();
+    const trimmedHandle = profileHandle.trim();
+    const trimmedBio = profileBio.trim();
+
+    if (!trimmedName || !trimmedHandle) {
+      Alert.alert("Missing info", "Please enter both a name and a handle before saving.");
+      return;
+    }
+
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    try {
+      let payload: FormData | { name: string; handle: string; bio: string };
+
+      if (avatarUri) {
+        const formData = new FormData();
+        formData.append("name", trimmedName);
+        formData.append("handle", trimmedHandle);
+        formData.append("bio", trimmedBio);
+        formData.append("avatar", {
+          uri: avatarUri,
+          name: "avatar.jpg",
+          type: "image/jpeg",
+        } as any);
+        payload = formData;
+      } else {
+        payload = {
+          name: trimmedName,
+          handle: trimmedHandle,
+          bio: trimmedBio,
+        };
+      }
+
+      const { data } = await api.put("/api/users/profile", payload);
+
+      if (!data.success || !data.user) {
+        throw new Error(data.message || "Profile update failed");
+      }
+
+      await updateUser(data.user);
+      setSavedAvatar(data.user.avatar || null);
+      Alert.alert("Success", "Profile updated successfully.");
       setEditMode(false);
       setAvatarUri(null);
-    }, 2000);
+    } catch (err : any) {
+      const message = err?.response?.data?.message
+        || (err?.code === "ECONNABORTED" ? "The server took too long to respond." : null)
+        || (!err?.response ? "Cannot reach the server. Check that the server is running and your phone is on the same network." : null)
+        || "Failed to save profile. Please try again.";
+      Alert.alert("Error", message);
+    } finally {
+      setLoading(false);
+    }
   }
 
   const cancelEdit = () => {
@@ -59,16 +107,35 @@ export default function profile() {
   }
 
   const handleLogout = async () => {
-    setShowLogout(true)
+    Alert.alert(
+      "Sign Out",
+      "Are you sure you want to sign out?",
+      [
+        { text: "Cancel", style: "cancel" },
+        { text: "Sign Out", style: "destructive", onPress: logout },
+      ]
+    );
   }
 
-  const [showLogout, setShowLogout] = useState(false)
-
-  const confirmSignOut = () => {
-    setShowLogout(false)
-    // TODO: perform sign out logic here
-    
+  const getUser = async () => {
+    try {
+      const { data } = await api.get("/api/users/profile");
+      setProfileName(data.user?.name);
+      setProfileHandle(data.user?.handle);
+      setProfileBio(data.user?.bio);
+      if (data.user.avatar) {
+        setSavedAvatar(data.user.avatar);
+        setAvatarUri(null); // Reset avatarUri to ensure the saved avatar is displayed
+      }
+    } catch (err : any) {
+      console.error("Failed to fetch user profile:", err.message);
+    }
   }
+
+  useEffect(() => {
+    getUser();
+  }, []);
+
   return (
     <SafeAreaView style={styles.safe} edges={['top']}>
       <ScrollView contentContainerStyle={styles.scroll} showsVerticalScrollIndicator={false}>
@@ -97,11 +164,11 @@ export default function profile() {
 
           {!editMode && (
             <View style={styles.userInfo}>
-              <Text style={styles.userName}>{user?.name || "User"}</Text>
-              <Text style={styles.userHandle}>@{user?.handle || "user"}</Text>
-              <Text style={styles.userEmail}>@{user?.email || "user@example.com"}</Text>
+              <Text style={styles.userName}>{profileName}</Text>
+              <Text style={styles.userHandle}>@{profileHandle}</Text>
+              <Text style={styles.userEmail}>@{user?.email}</Text>
               {user?.bio && (
-                <Text style={styles.userBio}>{user?.bio}</Text>
+                <Text style={styles.userBio}>{profileBio}</Text>
               )}
             </View>
           )}
@@ -183,43 +250,6 @@ export default function profile() {
           </TouchableOpacity>
         </View>
       </ScrollView>
-
-      <Modal
-        transparent
-        visible={showLogout}
-        animationType="fade"
-        onRequestClose={() => setShowLogout(false)}
-      >
-        <Pressable
-          style={{ flex: 1, backgroundColor: 'rgba(0,0,0,0.45)', justifyContent: 'center', padding: 24 }}
-          onPress={() => setShowLogout(false)}
-        >
-          <Pressable
-            style={{ backgroundColor: '#fff', borderRadius: 18, padding: 20, gap: 14 }}
-            onPress={() => {}}
-          >
-            <Text style={{ fontSize: 18, fontWeight: '700', color: Colors.onSurface }}>Sign out?</Text>
-            <Text style={{ fontSize: 14, color: Colors.onSurfaceVariant }}>
-              Are you sure you want to sign out of your account?
-            </Text>
-
-            <View style={{ flexDirection: 'row', justifyContent: 'flex-end', gap: 12 }}>
-              <TouchableOpacity
-                onPress={() => setShowLogout(false)}
-                style={{ paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10, backgroundColor: Colors.surface }}
-              >
-                <Text style={{ color: Colors.onSurface }}>Cancel</Text>
-              </TouchableOpacity>
-              <TouchableOpacity
-                onPress={confirmSignOut}
-                style={{ paddingVertical: 10, paddingHorizontal: 14, borderRadius: 10, backgroundColor: Colors.error }}
-              >
-                <Text style={{ color: '#fff', fontWeight: '600' }}>Sign Out</Text>
-              </TouchableOpacity>
-            </View>
-          </Pressable>
-        </Pressable>
-      </Modal>
     </SafeAreaView>
   )
 }
