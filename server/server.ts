@@ -5,6 +5,9 @@ import connectDB from "./config/db.js";
 import { clerkMiddleware } from '@clerk/express'
 import userRouter from "./routes/userRoutes.js";
 import messageRouter from "./routes/messageRoutes.js";
+import storyRouter from "./routes/storyRoutes.js";
+import http from "http";
+import { initializeSocketServer } from "./socket/socketManager.js";
 
 const app = express();
 
@@ -23,6 +26,7 @@ app.get('/', (req: Request, res: Response) => {
 });
 app.use('/api/users', userRouter);
 app.use('/api/messages', messageRouter);
+app.use('/api/stories', storyRouter);
 
 
 // Error Handler
@@ -31,6 +35,10 @@ app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     res.status(500).json({ success: false, message: err || 'Something went wrong!' });
 });
 
-app.listen(port, () => {
+//HTTP Server 
+const server = http.createServer(app);
+initializeSocketServer(server);
+
+server.listen(port, () => {
     console.log(`Server is running at http://localhost:${port}`);
 });

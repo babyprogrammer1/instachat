@@ -4,6 +4,7 @@ import Conversation from "../models/Conversation.js";
 import cloudinary from "../config/cloudinary.js";
 import { Readable } from "stream";
 import Message from "../models/Messages.js";
+import { handleConversationEvents } from "../socket/socketManager.js";
 
 //Helper : find convo between two users
 async function findConversation(userId: string, otherId: string) {
@@ -96,9 +97,9 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
                 }
                 });
                 const readableStream = new Readable();
-                    readableStream.push(file.buffer);
-                    readableStream.push(null);
-                    readableStream.pipe(uploadStream);
+                readableStream.push(file.buffer);
+                readableStream.push(null);
+                readableStream.pipe(uploadStream);
             });
             const result = await uploadPromise;
             mediaUrl = result.secure_url;
@@ -186,6 +187,13 @@ export const deleteConversation = async (req: AuthRequest, res: Response) => {
         }
 
         // Notify other participants about the deletion
+        await handleConversationEvents(userId, String(conversationId),{
+            type: "chat_deleted",
+            conversationId,
+        });
+
+        //Delete all messages in the conversation
+        await Message.deleteMany({ conversationId });
 
 
         // Delete the conversation itself

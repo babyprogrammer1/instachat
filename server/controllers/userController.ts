@@ -3,14 +3,13 @@ import { Response } from "express";
 import User from "../models/User.js";
 import cloudinary from "../config/cloudinary.js";
 import { Readable } from "stream";
+import { broadcastUserUpdate } from "../socket/socketManager.js";
 
-const userFields = "name email bio handle avatar isOnline lastSeen";
 
 // Get all users
 export const getUsers = async (req: AuthRequest, res: Response) => {
     const users = await User.find({ _id: { $ne: req.userId!.id } })
-        .select(userFields)
-        .lean();
+        .select("name email bio handle avatar isOnline lastSeen");
     res.json({ success: true, users });
 }
 
@@ -36,14 +35,14 @@ export const searchUsers = async (req: AuthRequest, res: Response) => {
             {email: regex},
             { handle: regex}
         ]
-    }).select(userFields).limit(20).lean();
+    }).select("name email bio handle avatar isOnline lastSeen").limit(20);
 
     res.json({ success: true, users });
 }
 
 // Get current user profile
 export const getProfile = async (req: AuthRequest, res: Response) => {
-    const user = await User.findById(req.userId?.id);
+    const user = await User.findById(req.userId!.id);
     if (!user){
         res.status(404).json({ success: false, message: "User not found" });
         return; 
@@ -53,13 +52,10 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
 
 // Update current user profile
 export const updateProfile = async (req: AuthRequest, res: Response) => {
-    try {
         const { name, bio, handle } = req.body;
         const file = req.file;
-        const normalizedHandle = typeof handle === "string" ? handle.trim().toLowerCase() : "";
-
-        if (normalizedHandle) {
-            const handleExists = await User.exists({ handle: normalizedHandle, _id: { $ne: req.userId?.id } });
+        if (handle) {
+            const handleExists = await User.exists({ handle: handle.trim().toLowerCase(), _id: { $ne: req.userId!.id } });
             if (handleExists) {
                 res.status(400).json({ success: false, message: "Handle already in use" });
                 return;
@@ -89,35 +85,25 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
             res.status(500).json({ success: false, message: "Unable to upload avatar right now" });
             return;
         }
-        }
+}
 
         const updatedData : any = {
-            ...(typeof name === "string" && name.trim() && { name: name.trim() }),
-            ...(bio !== undefined && { bio: typeof bio === "string" ? bio.trim() : bio }),
-            ...(normalizedHandle && { handle: normalizedHandle })
+            ...(name && {name}),
+            ...(bio !== undefined && { bio }),
+            ...(handle && { handle: handle.trim().toLowerCase() }),
         };
 
         if (avatarUrl) {
             updatedData.avatar = avatarUrl;
         }
 
-        const updated = await User.findByIdAndUpdate(req.userId?.id, updatedData, {
-            returnDocument: "after",
-            runValidators: true,
-        }).lean();
+        const updated = await User.findByIdAndUpdate(req.userId!.id, updatedData, {
+            returnDocument: "after"
+        });
 
-        if (!updated) {
-            res.status(404).json({ success: false, message: "User not found" });
-            return;
+        if (updated) {
+            broadcastUserUpdate(updated);
         }
 
         res.json({ success: true, user: updated });
-    } catch (error: any) {
-        console.error("Error updating profile:", error);
-        if (error?.code === 11000) {
-            res.status(400).json({ success: false, message: "That handle or email is already in use" });
-            return;
-        }
-        res.status(500).json({ success: false, message: "Unable to save profile right now" });
-    }
-}
+    } 
