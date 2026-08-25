@@ -68,6 +68,7 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
 
         let avatarUrl = "";
         if (file) {
+            try {
             const uploadPromise = new Promise<{secure_url: string}>((resolve, reject) => {
                 const uploadStream = cloudinary.uploader.upload_stream({ folder: "insta_chat_avatars" }, (error, result) => {
                     if (error) {
@@ -83,6 +84,11 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
             });
             const result = await uploadPromise;
             avatarUrl = result.secure_url;
+        } catch(err) {
+            console.error("Error uploading avatar:", err);
+            res.status(500).json({ success: false, message: "Unable to upload avatar right now" });
+            return;
+        }
         }
 
         const updatedData : any = {
