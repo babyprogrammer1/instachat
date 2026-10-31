@@ -1,7 +1,6 @@
 import { View, Text, TouchableOpacity, KeyboardAvoidingView, Platform, ActivityIndicator, FlatList, Image, TextInput, Alert } from 'react-native'
 import React, { useEffect, useRef, useState } from 'react'
-import { useRouter } from 'expo-router'
-import { dummyConversationData, dummyMessages, dummyUserProfile, dummyUsers } from '@/assets/assets'
+import { useLocalSearchParams, useRouter } from 'expo-router'
 import { SafeAreaView } from 'react-native-safe-area-context'
 import { styles } from '@/assets/styles/ChatScreen.styles'
 import { Ionicons } from '@expo/vector-icons'
@@ -11,32 +10,51 @@ import Avatar from '@/components/Avatar'
 import Bubble from '@/components/Bubble'
 import * as ImagePicker from 'expo-image-picker'
 import { LinearGradient } from 'expo-linear-gradient'
+import { api, useApp } from '@/context/AppContext'
 
 
 export default function ChatScreen() {
 
   const router = useRouter()
-
-  let {auth, messages, users, selectedConversation, typingUsers} = {
-    auth: { user: dummyUserProfile },
-    messages: dummyMessages,
-    users: dummyUsers,
-    selectedConversation: dummyConversationData[0],
-    typingUsers: {
-      [dummyUsers[0]._id]: true,
-    }
-  }
+  const { id } = useLocalSearchParams<{ id: string }>()
+  const { auth, messages, setMessages, users, conversations, selectedConversation, setSelectedConversation, typingUsers, sendWsEvent } = useApp()
 
   const [text, setText] = useState('')
   const [sending, setSending] = useState(false)
-  const [loading, setLoading] = useState(false)
+  const [loading, setLoading] = useState(true)
   const [mediaUri, setMediaUri] = useState<string | null>(null)
 
   const flatListRef = useRef<FlatList>(null);
 
-  const partner = selectedConversation?.participant;
+  const conversation = selectedConversation?._id === id
+    ? selectedConversation
+    : conversations.find((item) => item._id === id) || null;
+  const partner = conversation?.participant;
 
   //Scroll to bottom when new message is added
+  useEffect(() => {
+    if (!id) return;
+    const loadChat = async () => {
+      setLoading(true);
+      try {
+        const [conversationResponse, messagesResponse] = await Promise.all([
+          conversation ? Promise.resolve({ data: { conversation } }) : api.get(`/api/messages/conversations`),
+          api.get(`/api/messages/conversations/${id}/messages`),
+        ]);
+        if (!conversation && conversationResponse.data.success) {
+          const found = conversationResponse.data.conversations.find((item: typeof conversations[number]) => item._id === id);
+          setSelectedConversation(found || null);
+        }
+        if (messagesResponse.data.success) setMessages(messagesResponse.data.messages);
+      } catch (error) {
+        console.error("Unable to load conversation:", error);
+      } finally {
+        setLoading(false);
+      }
+    };
+    loadChat();
+  }, [id]);
+
   useEffect(() => {
     if (messages.length > 0) {
       setTimeout(() => {
@@ -46,7 +64,19 @@ export default function ChatScreen() {
   }, [messages]);
 
   const deleteChat = () => {
-    // Implement delete chat functionality here
+    Alert.alert("Delete conversation", "Delete this conversation and all its messages?", [
+      { text: "Cancel", style: "cancel" },
+      { text: "Delete", style: "destructive", onPress: async () => {
+        try {
+          await api.delete(`/api/messages/conversations/${id}`);
+          setSelectedConversation(null);
+          router.back();
+        } catch (error) {
+          console.error("Unable to delete conversation:", error);
+          Alert.alert("Delete failed", "Unable to delete this conversation right now.");
+        }
+      }},
+    ]);
   }
 
   const pickMedia = async () => {
@@ -69,16 +99,47 @@ export default function ChatScreen() {
 
   const handleTyping = (inputText: string) => {
     setText(inputText);
+    if (conversation && partner) {
+      sendWsEvent({ type: "typing", conversationId: conversation._id, receiverId: partner._id, isTyping: inputText.length > 0 });
+    }
   }
 
   const send = async () => {
-    if (!text.trim() && !mediaUri || !selectedConversation) return;
+    if ((!text.trim() && !mediaUri) || !conversation || !auth.user) return;
     setSending(true);
-    setTimeout(() => {
+    try {
+      const formData = new FormData();
+      formData.append("conversationId", conversation._id);
+      formData.append("receiverId", partner?._id || "");
+      formData.append("text", text.trim());
+      if (mediaUri) {
+        formData.append("file", {
+          uri: mediaUri,
+          type: "image/jpeg",
+          name: "message.jpg",
+        } as any);
+      }
+      const { data } = await api.post("/api/messages/send", formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      });
+      if (data.success) {
+        setMessages((prev) => [...prev, data.message]);
+        sendWsEvent({
+          type: "message",
+          conversationId: conversation._id,
+          receiverId: partner?._id,
+          payload: data.message,
+        });
+      }
+      sendWsEvent({ type: "typing", conversationId: conversation._id, receiverId: partner?._id, isTyping: false });
+    } catch (error) {
+      console.error("Unable to send message:", error);
+      Alert.alert("Send failed", "Unable to send your message right now.");
+    } finally {
       setSending(false);
       setText('');
       setMediaUri(null);
-    }, 500);
+    }
   }
 
   // Typing indicator helpers
@@ -87,7 +148,7 @@ export default function ChatScreen() {
     return partner?._id === userId;
   });
 
-  if (!selectedConversation) {
+  if (!conversation || !partner) {
     return (
       <SafeAreaView style={styles.safe}>
         <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
@@ -101,9 +162,9 @@ export default function ChatScreen() {
     )
   }
 
-  const headerName = partner!.name;
-  const headerAvatar = partner!.avatar;
-  const headerSub = partner!.isOnline ? 'Online' : partner!.lastSeen ? `Last seen ${formatTime(partner.lastSeen)}` : 'Offline';
+  const headerName = partner.name;
+  const headerAvatar = partner.avatar;
+  const headerSub = partner.isOnline ? 'Online' : partner.lastSeen ? `Last seen ${formatTime(partner.lastSeen)}` : 'Offline';
 
   return (
     <SafeAreaView style={styles.safe} edges={['top', 'bottom']}>

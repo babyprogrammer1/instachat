@@ -20,7 +20,7 @@ async function findConversation(userId: string, otherId: string) {
 // Start or get a conversation with a user
 export const startOrGetConversation = async (req: AuthRequest, res: Response) => {
     const userId = req.userId!.id;
-    const targetUserId = String(req.params.userId);
+    const targetUserId = String(req.params.targetUserId);
 
     let conversation : any = await findConversation(userId, targetUserId);
 
@@ -38,7 +38,7 @@ export const startOrGetConversation = async (req: AuthRequest, res: Response) =>
         success: true,
         conversation: {
             _id: conversation._id,
-            participants: other,
+            participant: other,
             lastMessage: conversation.lastMessage
         }
     });
@@ -59,7 +59,7 @@ export const getConversations = async (req: AuthRequest, res: Response) => {
         return {
             _id: c._id,
             isGroup: false,
-            participants: other,
+            participant: other,
             lastMessage: c.lastMessage,
             updatedAt: c.updatedAt
         }
@@ -134,7 +134,7 @@ export const sendMessage = async (req: AuthRequest, res: Response) => {
         receiver: receiverId || conversation.participants.find((p: any) => String(p) !== senderId),
         conversationId: conversation._id,
         text: text?.trim(),
-        mediaUrl: mediaUrl ? [mediaUrl] : undefined,
+        mediaUrl: mediaUrl || undefined,
         mediaType,
     });
 

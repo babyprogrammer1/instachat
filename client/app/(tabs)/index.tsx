@@ -1,8 +1,7 @@
 import { View, Text, TouchableOpacity, TextInput, ActivityIndicator, FlatList } from 'react-native'
-import React, { useEffect, useState } from 'react'
+import React, { useState } from 'react'
 import { Conversation, UserStory } from '@/types'
 import { useRouter } from 'expo-router';
-import { dummyConversationData } from '@/assets/assets';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { styles } from '@/assets/styles/MessagesScreen.styles';
 import { Ionicons } from '@expo/vector-icons';
@@ -10,25 +9,14 @@ import { Colors } from '@/constants/Colors';
 import StoriesBar from '@/components/StoriesBar';
 import StoryViewer from '@/components/StoryViewer';
 import ConvoItem from '@/components/ConvoItem';
+import { useApp } from '@/context/AppContext';
 
 export default function MessagesScreen() {
-const [conversations, setConversations] = useState<Conversation[]>([]);
 const [search, setSearch] = useState('');
-const [loading, setLoading] = useState(false);
 const [selectedStory, setSelectedStory] = useState<UserStory | null>(null)
+const { conversations } = useApp();
 
 const router = useRouter()
-const fetchConversations = () => {
-  setLoading(true)
-  setTimeout(() => {
-    setConversations(dummyConversationData as any)
-    setLoading(false)
-  }, 1000)
-}
-
-useEffect(() => {
-  fetchConversations()
-}, []) 
 
 const lowerSearch = search.toLowerCase();
 const filtered = search ? conversations.filter(c => c.participant?.name.toLowerCase().includes(lowerSearch) || c.participant?.handle.toLowerCase().includes(lowerSearch)) : conversations;
@@ -66,9 +54,7 @@ const openConvo = (convo: Conversation) => {
       {/* Divider */}
       <View style={styles.divider} />
       {/* Conversations */}
-      {loading ? (
-        <ActivityIndicator color={Colors.primary} style={{marginTop: 40}} />
-      ): (
+      {(
         <FlatList data={filtered} keyExtractor={(c) => c._id} contentContainerStyle={styles.listContent} renderItem={({item}) => (
           <ConvoItem convo={item} selected={false} onPress={() => openConvo(item)} />
         )} 

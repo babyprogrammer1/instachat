@@ -122,7 +122,7 @@ export async function handleConversationEvents(senderId: string, conversationId:
         const payload = JSON.stringify(event);
         conversation.participants.forEach((pId) => {
             const participantId = String(pId);
-            if (participantId !== senderId) return; // Skip the sender
+            if (participantId === senderId) return; // Skip the sender
             const ws = onlineUsers.get(participantId);
             if (ws?.readyState === WebSocket.OPEN) {
                 ws.send(payload);
