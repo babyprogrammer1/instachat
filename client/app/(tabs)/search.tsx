@@ -2,12 +2,12 @@ import { View, Text, TextInput, TouchableOpacity, ActivityIndicator, FlatList } 
 import React, { useEffect, useState } from 'react'
 import type {User as IUser} from '@/types';
 import { useRouter } from 'expo-router';
-import { dummyUsers } from '@/assets/assets';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { styles } from '@/assets/styles/SearchScreen.styles';
 import { Colors } from '@/constants/Colors';
 import Ionicons from '@expo/vector-icons/build/Ionicons';
 import Avatar from '@/components/Avatar';
+import { api, useApp } from '@/context/AppContext';
 
 
 export default function search() {
@@ -16,13 +16,23 @@ export default function search() {
   const [users, setUsers] = useState<IUser[]>([]);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const { setSelectedConversation } = useApp();
 
   const fetchUsers = async () => {
+    if (!search.trim()) {
+      setUsers([]);
+      return;
+    }
     setLoading(true);
-    setTimeout(() => {
-      setUsers(dummyUsers)
+    try {
+      const { data } = await api.get("/api/users/search", { params: { query: search.trim() } });
+      if (data.success) setUsers(data.users);
+    } catch (error) {
+      console.error("Unable to search users:", error);
+      setUsers([]);
+    } finally {
       setLoading(false);
-    }, 1000);
+    }
   };
 
   useEffect(() => {
@@ -31,7 +41,15 @@ export default function search() {
   }, [search]);
 
   const startChat = async (user: IUser) => {
-    router.push(`/chat/${user._id}`)
+    try {
+      const { data } = await api.get(`/api/messages/conversations/with/${user._id}`);
+      if (data.success) {
+        setSelectedConversation(data.conversation);
+        router.push(`/chat/${data.conversation._id}`);
+      }
+    } catch (error) {
+      console.error("Unable to start conversation:", error);
+    }
   }
 
   return (

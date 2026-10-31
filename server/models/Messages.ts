@@ -5,7 +5,7 @@ export interface IMessage extends Document {
   receiver?: string;
   conversationId?: mongoose.Types.ObjectId;
   text?: string;
-  mediaUrl?: string[];
+  mediaUrl?: string;
   mediaType?: 'image' | 'video';
   read: boolean;
   createdAt: Date;

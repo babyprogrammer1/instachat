@@ -60,7 +60,7 @@ export default function RootLayout() {
             </Stack>
             <StatusBar style="dark" />
           </AppProvider>
-      </GestureHandlerRootView>;
+      </GestureHandlerRootView>
     </ClerkLoaded>
   </ClerkProvider>
 }
